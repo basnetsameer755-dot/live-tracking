@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from "react-leaflet";
 import { ref, push, onValue } from "firebase/database";
-import { database } from "./firebase";
+import { database, auth, signInAnonymously, onAuthStateChanged } from "./firebase";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
@@ -11,24 +11,16 @@ const blueIcon = new L.Icon({
   iconAnchor: [15, 15],
 });
 
-// Generate persistent user ID
-let userId = localStorage.getItem("userId");
-if (!userId) {
-  userId = `user-${Math.random().toString(36).substr(2, 9)}`;
-  localStorage.setItem("userId", userId);
-}
-
-// Calculate distance between two lat/lng points (in meters)
 function getDistance(loc1, loc2) {
-  const R = 6371e3; // meters
+  const R = 6371e3;
   const toRad = (deg) => (deg * Math.PI) / 180;
   const dLat = toRad(loc2.lat - loc1.lat);
   const dLng = toRad(loc2.lng - loc1.lng);
   const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(loc1.lat)) *
       Math.cos(toRad(loc2.lat)) *
-      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+      Math.sin(dLng / 2) ** 2;
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
@@ -38,8 +30,22 @@ function App() {
   const [userPaths, setUserPaths] = useState({});
   const appStartTime = useRef(Date.now());
   const lastLocation = useRef(null);
+  const [userId, setUserId] = useState(null);
 
   useEffect(() => {
+    // Sign in anonymously
+    signInAnonymously(auth).catch((error) => console.error("Auth Error:", error));
+
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setUserId(user.uid);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!userId) return;
+
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
         const { latitude, longitude } = position.coords;
@@ -49,10 +55,9 @@ function App() {
           timestamp: Date.now(),
         };
 
-        // Filter: Skip point if moved less than 1 meter
         if (lastLocation.current) {
           const dist = getDistance(lastLocation.current, newLoc);
-          if (dist < 1) return;
+          if (dist < 1) return; // ignore minor jumps
         }
 
         lastLocation.current = newLoc;
@@ -71,7 +76,7 @@ function App() {
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     const pathRef = ref(database, "livePaths");
@@ -131,12 +136,6 @@ function App() {
 }
 
 export default App;
-
-
-
-
-
-
 
 
 
