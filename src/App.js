@@ -2,26 +2,30 @@ import React, { useEffect, useState, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from "react-leaflet";
 import { ref, push, onValue } from "firebase/database";
 import { database } from "./firebase";
+import { v4 as uuidv4 } from "uuid";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
+// Custom marker icon
 const blueIcon = new L.Icon({
   iconUrl: "https://cdn-icons-png.flaticon.com/512/684/684908.png",
   iconSize: [30, 30],
   iconAnchor: [15, 15],
 });
 
+// Generate or retrieve persistent user ID
 let userId = localStorage.getItem("userId");
 if (!userId) {
-  userId = `user-${Math.floor(Math.random() * 100000)}`;
+  userId = `user-${uuidv4()}`;
   localStorage.setItem("userId", userId);
 }
 
 function App() {
   const [currentPosition, setCurrentPosition] = useState(null);
   const [userPaths, setUserPaths] = useState({});
-  const appStartTime = useRef(Date.now()); 
+  const appStartTime = useRef(Date.now());
 
+  // Track current user's location
   useEffect(() => {
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
@@ -31,6 +35,7 @@ function App() {
           lng: longitude,
           timestamp: Date.now(),
         };
+
         const userPathRef = ref(database, `livePaths/${userId}`);
         push(userPathRef, location);
 
@@ -43,6 +48,7 @@ function App() {
     return () => navigator.geolocation.clearWatch(watchId);
   }, []);
 
+  // Listen to all users' live paths
   useEffect(() => {
     const pathRef = ref(database, "livePaths");
 
@@ -52,7 +58,7 @@ function App() {
 
       Object.entries(data).forEach(([uid, pathPoints]) => {
         const userTrail = Object.values(pathPoints)
-          .filter((p) => p.timestamp >= appStartTime.current) 
+          .filter((p) => p.timestamp >= appStartTime.current)
           .map((p) => [p.lat, p.lng]);
 
         if (userTrail.length > 0) {
@@ -67,7 +73,7 @@ function App() {
   }, []);
 
   if (!currentPosition) {
-    return <div style={{ padding: 20 }}> Waiting for GPS...</div>;
+    return <div style={{ padding: 20 }}>Waiting for GPS...</div>;
   }
 
   return (
@@ -99,7 +105,6 @@ function App() {
 }
 
 export default App;
-
 
 
 
