@@ -2,53 +2,77 @@ import React, { useEffect, useState, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from "react-leaflet";
 import { ref, push, onValue } from "firebase/database";
 import { database } from "./firebase";
-import { v4 as uuidv4 } from "uuid";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
-// Custom marker icon
 const blueIcon = new L.Icon({
   iconUrl: "https://cdn-icons-png.flaticon.com/512/684/684908.png",
   iconSize: [30, 30],
   iconAnchor: [15, 15],
 });
 
-// Generate or retrieve persistent user ID
+// Generate persistent user ID
 let userId = localStorage.getItem("userId");
 if (!userId) {
-  userId = `user-${uuidv4()}`;
+  userId = `user-${Math.random().toString(36).substr(2, 9)}`;
   localStorage.setItem("userId", userId);
+}
+
+// Calculate distance between two lat/lng points (in meters)
+function getDistance(loc1, loc2) {
+  const R = 6371e3; // meters
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const dLat = toRad(loc2.lat - loc1.lat);
+  const dLng = toRad(loc2.lng - loc1.lng);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(loc1.lat)) *
+      Math.cos(toRad(loc2.lat)) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
 }
 
 function App() {
   const [currentPosition, setCurrentPosition] = useState(null);
   const [userPaths, setUserPaths] = useState({});
   const appStartTime = useRef(Date.now());
+  const lastLocation = useRef(null);
 
-  // Track current user's location
   useEffect(() => {
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
         const { latitude, longitude } = position.coords;
-        const location = {
+        const newLoc = {
           lat: latitude,
           lng: longitude,
           timestamp: Date.now(),
         };
 
+        // Filter: Skip point if moved less than 1 meter
+        if (lastLocation.current) {
+          const dist = getDistance(lastLocation.current, newLoc);
+          if (dist < 1) return;
+        }
+
+        lastLocation.current = newLoc;
+
         const userPathRef = ref(database, `livePaths/${userId}`);
-        push(userPathRef, location);
+        push(userPathRef, newLoc);
 
         setCurrentPosition([latitude, longitude]);
       },
       (err) => console.error("GPS Error:", err),
-      { enableHighAccuracy: true }
+      {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 10000,
+      }
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
   }, []);
 
-  // Listen to all users' live paths
   useEffect(() => {
     const pathRef = ref(database, "livePaths");
 
@@ -91,7 +115,9 @@ function App() {
           return (
             <React.Fragment key={uid}>
               <Marker position={last} icon={blueIcon}>
-                <Popup>🧍 User: <b>{uid}</b></Popup>
+                <Popup>
+                  🧍 User: <b>{uid}</b>
+                </Popup>
               </Marker>
               {trail.length > 1 && (
                 <Polyline positions={trail} color="red" weight={3} opacity={0.8} />
